@@ -28,8 +28,9 @@ void clickToward(int target)
         digitalWrite(CLICK_PIN, HIGH);
         delayMicroseconds(CLICK_PULSE_DURATION);
         digitalWrite(CLICK_PIN, LOW);
-        ++currentNumber;
     }
+
+    currentNumber = target;
 }
 
 
@@ -40,6 +41,8 @@ void clickToward(int target)
 void update()
 {
     int number = 0;
+    bool headerRead = false;
+    byte lastByte = 0;
     byte x = 0;
 
     if (!client.connect()) {
@@ -50,27 +53,43 @@ void update()
     client.println("GET " SERVER_PATH " HTTP/1.0");
     client.println();
 
-    while (client.connected()) {
+    // skip response header, i.e. read until
+    // two new lines in a row
+    while (!headerRead && client.connected()) {
         while (client.available()) {
             x = client.read();
-            if (x == '\n') {
-                // we've read first line completly
-                // that's enough
-                client.stop();
+            if (x == '\r')
+                continue;
+
+            if (lastByte == '\n' && x == '\n') {
+                headerRead = true;
                 break;
             }
 
-            x -= '0';
-            if (x < 0 || x > 9) {
-                // unexpected response, cancel update
-                client.stop();
-                return;
-            }
-
-            number = number * 10 + x;
+            lastByte = x;
         }
     }
+
+    // now read the body
+    while (client.available()) {
+        x = client.read();
+        if (x == '\r' || x == '\n') {
+            // we've read first line completly
+            // that's enough
+            break;
+        }
+
+        x -= '0';
+        if (x < 0 || x > 9) {
+            // unexpected response, cancel update
+            client.stop();
+            return;
+        }
+
+        number = number * 10 + x;
+    }
     
+    client.stop();
     clickToward(number);
 }
 
@@ -81,7 +100,7 @@ void setup()
     Serial.begin(9600);
     pinMode(CLICK_PIN, OUTPUT);
 
-    delay(1000);
+    delay(5000);
 }
 
 
